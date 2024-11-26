@@ -1,0 +1,7 @@
+---
+roles: 
+  - name: apigban.rhel-9.3-base 
+    scm: git
+    src: https://git.home.apigban.com/apigban/rhel-9.3-base
+
+

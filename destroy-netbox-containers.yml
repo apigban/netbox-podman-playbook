@@ -1,0 +1,92 @@
+---
+- name: Destroy netbox containers and volumes
+  hosts: ipam01
+  gather_facts: true
+  vars_files:
+    - inventory/secrets.yml
+
+  tasks:
+    - name: Destroy PostgreSQL for NetBox
+      become: true
+      become_user: "{{ ansible_user }}"
+      containers.podman.podman_container:
+        name: "netbox-postgres"
+        image: "docker.io/postgres:16-alpine"
+        network: "ipam_net"
+        state: absent
+        volumes:
+          - "netbox-postgres-data:/var/lib/postgresql/data"
+        env:
+          POSTGRES_DB: netbox
+          POSTGRES_USER: netbox
+          POSTGRES_PASSWORD: "{{ netbox_db_password }}"
+        restart_policy: "always"
+        recreate: true
+
+    - name: Destroy Redis for NetBox
+      become: true
+      become_user: "{{ ansible_user }}"
+      containers.podman.podman_container:
+        name: "netbox-redis"
+        image: "docker.io/valkey/valkey:8.0-alpine"
+        state: absent
+        network: "ipam_net"
+        volumes:
+          - "netbox-redis-data:/data"
+        command: ["redis-server", "--appendonly", "yes"]
+        restart_policy: "always"
+        recreate: true
+
+    - name: Destroy NetBox
+      become: true
+      become_user: "{{ ansible_user }}"
+      containers.podman.podman_container:
+        name: "netbox"
+        image: "docker.io/netboxcommunity/netbox:latest"
+        state: absent
+        network: "ipam_net"
+        ports:
+          - "8080:8080"
+        volumes:
+          - "netbox-media-files:/opt/netbox/netbox/media"
+          - "netbox-reports:/opt/netbox/netbox/reports"
+          - "netbox-scripts:/opt/netbox/netbox/scripts"
+        env:
+          ALLOWED_HOSTS: "*"
+          DB_WAIT_DEBUG: 1
+          DB_HOST: "netbox-postgres"
+          DB_USER: "netbox"
+          DB_PASSWORD: "{{ netbox.env.db_password }}"
+          SECRET_KEY: "{{ netbox.env.secret_key }}"
+          POSTGRES_DB: netbox-postgres
+          POSTGRES_USER: netbox
+          POSTGRES_PASSWORD: "{{ netbox.env.db_password }}"
+          REDIS_HOST: "netbox-redis"
+          REDIS_PORT: "6379"
+          REDIS_PASSWORD: "{{ netbox.env.db_password }}"
+          SUPERUSER_NAME: admin
+          SUPERUSER_EMAIL: "{{ netbox.env.superuser_email }}"
+          SUPERUSER_PASSWORD: "{{ netbox.env.superuser_password }}"
+          SKIP_SUPERUSER: "false"
+        restart_policy: "always"
+        recreate: true
+
+    - name: Destroy volumes for NetBox
+      become: true
+      become_user: "{{ ansible_user }}"
+      containers.podman.podman_volume:
+        name: "{{ item }}"
+        state: absent
+      loop:
+        - netbox-postgres-data
+        - netbox-redis-data
+        - netbox-media-files
+        - netbox-reports
+        - netbox-scripts
+
+    - name: Destroy ipam_net network
+      become_user: "{{ ansible_user }}"
+      become: true
+      containers.podman.podman_network:
+        name: ipam_net
+        state: absent

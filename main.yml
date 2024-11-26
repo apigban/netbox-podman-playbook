@@ -1,0 +1,112 @@
+---
+- name: Deploy Netbox
+  hosts: ipam01
+  gather_facts: true
+  vars_files:
+    - inventory/secrets.yml
+
+  roles:
+    - name: apigban.rhel-9.3-base
+
+  tasks:
+    - name: Create a podman network
+      become_user: "{{ ansible_user }}"
+      containers.podman.podman_network:
+        name: ipam_net
+      become: true
+
+    - name: Create volumes for NetBox
+      become: true
+      become_user: "{{ ansible_user }}"
+      containers.podman.podman_volume:
+        name: "{{ item }}"
+        state: present
+      loop:
+        - netbox-postgres-data
+        - netbox-redis-data
+        - netbox-media-files
+        - netbox-reports
+        - netbox-scripts
+
+    - name: Deploy Netshoot Container
+      become: true
+      become_user: "{{ ansible_user }}"
+      containers.podman.podman_container:
+        name: "netbox-netshoot"
+        image: "docker.io/nicolaka/netshoot"
+        network: "ipam_net"
+        command: ["/bin/bash", "-c", "while true; do ping localhost; sleep 60; done"]
+        state: started
+        restart_policy: "always"
+        recreate: true
+
+    - name: Deploy PostgreSQL for NetBox
+      become: true
+      become_user: "{{ ansible_user }}"
+      containers.podman.podman_container:
+        name: "netbox-postgres"
+        image: "docker.io/postgres:16-alpine"
+        network: "ipam_net"
+        state: started
+        volumes:
+          - "netbox-postgres-data:/var/lib/postgresql/data"
+        env:
+          POSTGRES_DB: netbox
+          POSTGRES_USER: netbox
+          POSTGRES_PASSWORD: "{{ netbox_db_password }}"
+        restart_policy: "always"
+        recreate: true
+
+    - name: Deploy Redis for NetBox
+      become: true
+      become_user: "{{ ansible_user }}"
+      containers.podman.podman_container:
+        name: "netbox-redis"
+        image: "docker.io/valkey/valkey:8.0-alpine"
+        state: started
+        network: "ipam_net"
+        volumes:
+          - "netbox-redis-data:/data"
+        command: ["redis-server", "--appendonly", "yes"]
+        restart_policy: "always"
+        recreate: true
+
+    - name: Deploy NetBox
+      become: true
+      become_user: "{{ ansible_user }}"
+      containers.podman.podman_container:
+        name: "netbox"
+        image: "docker.io/netboxcommunity/netbox:latest"
+        state: started
+        network: "ipam_net"
+        ports:
+          - "8080:8080"
+        volumes:
+          - "netbox-media-files:/opt/netbox/netbox/media"
+          - "netbox-reports:/opt/netbox/netbox/reports"
+          - "netbox-scripts:/opt/netbox/netbox/scripts"
+        env:
+          ALLOWED_HOSTS: "*"
+          DB_WAIT_DEBUG: 1
+          DB_HOST: "netbox-postgres"
+          DB_USER: "netbox"
+          DB_PASSWORD: "{{ netbox.env.db_password }}"
+          SECRET_KEY: "{{ netbox.env.secret_key }}"
+          POSTGRES_DB: netbox-postgres
+          POSTGRES_USER: netbox
+          POSTGRES_PASSWORD: "{{ netbox.env.db_password }}"
+          REDIS_HOST: "netbox-redis"
+          REDIS_PORT: "6379"
+          SUPERUSER_NAME: "{{ netbox.env.superuser_name }}"
+          SUPERUSER_EMAIL: "{{ netbox.env.superuser_email }}"
+          SUPERUSER_PASSWORD: "{{ netbox.env.superuser_password }}"
+          SKIP_SUPERUSER: "false"
+        restart_policy: "always"
+        recreate: true
+
+    - name: Allow traffic for netbox
+      ansible.posix.firewalld:
+        state: enabled
+        port: 8080/tcp
+        immediate: true
+        permanent: true

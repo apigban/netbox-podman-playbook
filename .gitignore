@@ -1,0 +1,6 @@
+ansible-navigator.log
+.vscode/settings.json
+inventory/secrets.yml
+roles/
+inventory/key/home
+inventory/key/home.pub

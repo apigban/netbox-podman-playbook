@@ -1,0 +1,29 @@
+---
+packages:
+  - firewalld
+  - iotop
+  - tmux
+  - qemu-guest-agent
+  - vim
+  - git
+  - container-tools
+  - epel-release
+  - ca-certificates
+  - gpgme
+  - yum-utils
+
+join_domain:
+  enabled: false
+
+netbox:
+  env:
+    secret_key: "{{ netbox_secret_key }}" 
+    db_host: "netbox-postgres"
+    db_password: "{{ netbox_db_password }}"
+    db_user: "netbox"
+    admin_password: "{{ netbox_admin_password }}"
+    redis_host: "netbox-redis"
+    redis_password: "{{ netbox_db_password }}"
+    superuser_name: "apigban"
+    superuser_email: "homelab@apigban.com"
+    superuser_password: "{{ netbox_admin_password }}"
